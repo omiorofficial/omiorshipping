@@ -883,13 +883,21 @@ function doGet(e) {
               'Payment Link Status','PAY LINK STATUS');
   }
 
-  // ── findRow: priority — ROW# > old AWB > new AWB > customer name ──
+  // ── findRow: priority — sheetRow (exact) > ROW# > old AWB > new AWB > customer name ──
   function findRow(upd) {
     var awbIdx  = awbCol();
     var rnIdx   = rowNumCol();
     var cnIdx   = custNameCol();
     var fnIdx   = ci('Your First Name');
     var lnIdx   = ci('Your Last Name');
+
+    // ── LEVEL 1: sheetRow — 100% unambiguous direct address ──────────
+    // sheetRow is the 1-based Google Sheet row number stamped at load time.
+    // If present and valid, jump straight to that row — no searching needed.
+    var sentSheetRow = parseInt(upd.sheetRow || 0);
+    if (sentSheetRow >= 2 && sentSheetRow <= data.length) {
+      return sentSheetRow - 1; // convert to 0-based data index
+    }
 
     var sentRowNum  = String(upd.rowNum || '').trim();
     var sentOldAwb  = (upd.oldAwb  || '').trim();
@@ -901,31 +909,31 @@ function doGet(e) {
     for (var i = 1; i &lt; data.length; i++) {
       var row = data[i];
 
-      // 1. ROW NUMBER — most unique, always wins if present
+      // 2. ROW NUMBER column — unique if sheet has it
       if (sentRowNum &amp;&amp; rnIdx !== -1) {
         var rn = String(row[rnIdx] || '').trim();
         if (rn &amp;&amp; rn === sentRowNum) return i;
       }
 
-      // 2. Old AWB — very reliable if AWB existed before edit
+      // 3. Old AWB — reliable if AWB existed before edit
       if (sentOldAwb &amp;&amp; awbIdx !== -1) {
         var ra = String(row[awbIdx] || '').trim();
         if (ra &amp;&amp; ra === sentOldAwb) return i;
       }
 
-      // 3. New AWB — match by the new value
+      // 4. New AWB — match by the new value
       if (!sentOldAwb &amp;&amp; sentNewAwb &amp;&amp; awbIdx !== -1) {
         var ra2 = String(row[awbIdx] || '').trim();
         if (ra2 &amp;&amp; ra2 === sentNewAwb) return i;
       }
 
-      // 4. Full customer name (single-column sheet)
+      // 5. Full customer name (single-column sheet)
       if (sentCust &amp;&amp; cnIdx !== -1) {
         var cn = String(row[cnIdx] || '').trim().toLowerCase();
         if (cn &amp;&amp; cn === sentCust) return i;
       }
 
-      // 5. First + Last name (separate-column sheet)
+      // 6. First + Last name (separate-column sheet)
       if (sentFn &amp;&amp; fnIdx !== -1) {
         var rf = String(row[fnIdx] || '').trim().toLowerCase();
         var rl = lnIdx !== -1 ? String(row[lnIdx] || '').trim().toLowerCase() : '';
@@ -945,7 +953,7 @@ function doGet(e) {
       var sample = [];
       for (var r = 1; r &lt; Math.min(data.length, 10); r++) {
         sample.push({
-          row: r + 1,
+          sheetRow: r + 1,
           awb:  awbIdx !== -1 ? String(data[r][awbIdx]||'').trim() : 'n/a',
           name: cnIdx  !== -1 ? String(data[r][cnIdx] ||'').trim() : 'n/a',
           rn:   rnIdx  !== -1 ? String(data[r][rnIdx] ||'').trim() : 'n/a'
@@ -953,8 +961,8 @@ function doGet(e) {
       }
       return {
         found: false,
-        sent: { rowNum: upd.rowNum||'', awb: upd.awb||'', oldAwb: upd.oldAwb||'', customerName: upd.customerName||'' },
-        detectedCols: { awb: headers[awbCol()]||'none', name: headers[cnIdx]||'none', rowNum: headers[rnIdx]||'none' },
+        sent: { sheetRow: upd.sheetRow||0, rowNum: upd.rowNum||'', awb: upd.awb||'', oldAwb: upd.oldAwb||'', customerName: upd.customerName||'' },
+        detectedCols: { awb: headers[awbIdx]||'none', name: headers[cnIdx]||'none', rowNum: headers[rnIdx]||'none' },
         sheetSample: sample
       };
     }
@@ -1448,6 +1456,11 @@ function parseRows(rows) {
   const firstNameCol = Object.keys(rows[0]).find(k => k.toLowerCase().trim() === 'your first name');
   const lastNameCol  = Object.keys(rows[0]).find(k => k.toLowerCase().trim() === 'your last name');
 
+  // Tag every row with its TRUE 1-based sheet row number BEFORE filtering.
+  // Row 1 in the sheet is the header; data starts at row 2, so sheetRow = dataIndex + 2.
+  // We attach _sheetRow to each row object so filtering never loses track of position.
+  rows.forEach((row, idx) => { row.__sheetRow = idx + 2; });
+
   allData = rows
     .filter(r => Object.values(r).some(v => v && v.toString().trim()))
     .map((row, i) => {
@@ -1480,6 +1493,7 @@ function parseRows(rows) {
       }
       return {
         id: i,
+        sheetRow:      row.__sheetRow,          // ← exact sheet row, used for all writes
         awb:           g(row,'awb'),
         customerName:  customerName || '—',
         firstName, lastName,
@@ -1659,7 +1673,7 @@ function saveAwbEdit() {
     return;
   }
   const ptcField = document.getElementById('eab_paytocourier').value.trim();
-  const payload = [{ awb: newAwb, company: newCompany, svc: newSvc, payDue: newPayDue,
+  const payload = [{ sheetRow: row.sheetRow||0, awb: newAwb, company: newCompany, svc: newSvc, payDue: newPayDue,
     payToCourier: ptcField !== '' ? String(newPayToCourier) : undefined,
     payToCourierProvided: ptcField !== '',
     customerName: row.customerName, firstName: row.firstName || '', lastName: row.lastName || '', oldAwb: oldAwb, rowNum: row.rowNum || '' }];
@@ -2388,7 +2402,7 @@ function markCustCourierPay(id) {
   _refreshCustCourierCell(row);
 
   syncCourierPaid(
-    [{ awb: row.awb, customerName: row.customerName, firstName: row.firstName||'', lastName: row.lastName||'', rowNum: row.rowNum||'', paidToCourier: newPaid, payToCourier: row.payToCourier }],
+    [{ sheetRow: row.sheetRow||0, awb: row.awb, customerName: row.customerName, firstName: row.firstName||'', lastName: row.lastName||'', rowNum: row.rowNum||'', paidToCourier: newPaid, payToCourier: row.payToCourier }],
     '₹' + fmt(payAmt) + ' paid to courier for ' + row.customerName
   );
 }
@@ -2416,14 +2430,14 @@ function syncCustRcv(row, msg) {
     return;
   }
   toast('Syncing to sheet...', '');
-  const updates = [{ awb: row.awb, customerName: row.customerName, firstName: row.firstName||'', lastName: row.lastName||'', rowNum: row.rowNum||'', payRcv: row.payRcv }];
+  const updates = [{ sheetRow: row.sheetRow||0, awb: row.awb, customerName: row.customerName, firstName: row.firstName||'', lastName: row.lastName||'', rowNum: row.rowNum||'', payRcv: row.payRcv }];
   fetch(url + '?action=markCustRcv&updates=' + encodeURIComponent(JSON.stringify(updates)))
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(j => {
       if (j.ok) {
         toast('✔ ' + msg + ' — Sheet synced!', 'ok');
         // Clear STATUS1 cell to trigger external automation
-        const clrUpdates = [{ awb: row.awb, customerName: row.customerName, firstName: row.firstName||'', lastName: row.lastName||'', rowNum: row.rowNum||'' }];
+        const clrUpdates = [{ sheetRow: row.sheetRow||0, awb: row.awb, customerName: row.customerName, firstName: row.firstName||'', lastName: row.lastName||'', rowNum: row.rowNum||'' }];
         fetch(url + '?action=clearStatus1&updates=' + encodeURIComponent(JSON.stringify(clrUpdates)))
           .then(r2 => r2.json())
           .then(j2 => {
@@ -2833,7 +2847,7 @@ function markCourierRowPaid(id) {
   const lbl = document.getElementById('courierDueTotalLabel');
   if (lbl) lbl.textContent = 'Total Due: ₹' + fmt(allDue);
 
-  syncCourierPaid([{ awb: row.awb, customerName: row.customerName, firstName: row.firstName||'', lastName: row.lastName||'', rowNum: row.rowNum||'', paidToCourier: newPaid, payToCourier: row.payToCourier }],
+  syncCourierPaid([{ sheetRow: row.sheetRow||0, awb: row.awb, customerName: row.customerName, firstName: row.firstName||'', lastName: row.lastName||'', rowNum: row.rowNum||'', paidToCourier: newPaid, payToCourier: row.payToCourier }],
     '₹' + fmt(payAmt) + ' recorded for ' + (row.customerName));
 }
 
@@ -2848,7 +2862,7 @@ function markCompanyPaid(btnOrName) {
   rows.forEach(r => { r.paidToCourier = r.payToCourier; });
   updateStats(); renderTable();
   openCourierDueModal(); // refresh
-  const updates = rows.map(r => ({ awb: r.awb, customerName: r.customerName, firstName: r.firstName||'', lastName: r.lastName||'', rowNum: r.rowNum||'', paidToCourier: r.payToCourier, payToCourier: r.payToCourier }));
+  const updates = rows.map(r => ({ sheetRow: r.sheetRow||0, awb: r.awb, customerName: r.customerName, firstName: r.firstName||'', lastName: r.lastName||'', rowNum: r.rowNum||'', paidToCourier: r.payToCourier, payToCourier: r.payToCourier }));
   syncCourierPaid(updates, '₹' + fmt(totalDue) + ' paid to ' + company);
 }
 
@@ -2865,7 +2879,7 @@ function markAllCourierPaid() {
   updateStats(); renderTable();
   openCourierDueModal();
 
-  const updates = dueRows.map(r => ({ awb: r.awb, customerName: r.customerName, firstName: r.firstName||'', lastName: r.lastName||'', rowNum: r.rowNum||'', paidToCourier: r.payToCourier, payToCourier: r.payToCourier }));
+  const updates = dueRows.map(r => ({ sheetRow: r.sheetRow||0, awb: r.awb, customerName: r.customerName, firstName: r.firstName||'', lastName: r.lastName||'', rowNum: r.rowNum||'', paidToCourier: r.payToCourier, payToCourier: r.payToCourier }));
   syncCourierPaid(updates, dueRows.length + ' payments marked paid', () => {
     btn.disabled = false; btn.textContent = '✔ Mark All Paid & Sync Sheet';
   });
@@ -3120,6 +3134,7 @@ function saveHandoverAmount(id) {
   }
   toast('Syncing to sheet...', '');
   const payload = [{
+    sheetRow: row.sheetRow||0,
     awb: row.awb, company: row.company, svc: row.svc,
     payDue: row.payDue, payToCourier: String(amt), payToCourierProvided: true,
     customerName: row.customerName,
@@ -3521,7 +3536,7 @@ function inlineChangeSvc(id, selectEl) {
     toast('Service Type changed to ' + newSvc + ' (local only)', 'ok'); return;
   }
   toast('Updating Service Type to ' + newSvc + ' in sheet...', '');
-  const payload = [{ awb: row.awb, customerName: row.customerName, firstName: row.firstName || '', lastName: row.lastName || '', rowNum: row.rowNum || '', svc: newSvc }];
+  const payload = [{ sheetRow: row.sheetRow||0, awb: row.awb, customerName: row.customerName, firstName: row.firstName || '', lastName: row.lastName || '', rowNum: row.rowNum || '', svc: newSvc }];
   fetch(url + '?action=updateServiceType&updates=' + encodeURIComponent(JSON.stringify(payload)))
     .then(r => r.json())
     .then(j => {
@@ -3542,7 +3557,7 @@ function resendTracking(id) {
     toast('No Apps Script URL — cannot clear STATUS1', 'err'); return;
   }
   toast('Clearing STATUS1 for ' + row.customerName + '...', '');
-  const payload = [{ awb: row.awb, customerName: row.customerName, firstName: row.firstName || '', lastName: row.lastName || '', rowNum: row.rowNum || '' }];
+  const payload = [{ sheetRow: row.sheetRow||0, awb: row.awb, customerName: row.customerName, firstName: row.firstName || '', lastName: row.lastName || '', rowNum: row.rowNum || '' }];
   fetch(url + '?action=clearStatus1&updates=' + encodeURIComponent(JSON.stringify(payload)))
     .then(r => r.json())
     .then(j => {
@@ -3563,7 +3578,7 @@ function resendPaymentLink(id) {
     toast('No Apps Script URL — cannot clear STATUS4', 'err'); return;
   }
   toast('Clearing STATUS4 for ' + row.customerName + '...', '');
-  const payload = [{ awb: row.awb, customerName: row.customerName, firstName: row.firstName || '', lastName: row.lastName || '', rowNum: row.rowNum || '' }];
+  const payload = [{ sheetRow: row.sheetRow||0, awb: row.awb, customerName: row.customerName, firstName: row.firstName || '', lastName: row.lastName || '', rowNum: row.rowNum || '' }];
   fetch(url + '?action=clearStatus4&updates=' + encodeURIComponent(JSON.stringify(payload)))
     .then(r => r.json())
     .then(j => {
