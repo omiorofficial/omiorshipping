@@ -3880,17 +3880,27 @@ function mobCardRow(r, tab) {
       '<span class="mob-row-name">'+esc(r.customerName)+'</span>' +
       (r.awb ? '<span class="mob-row-awb">'+esc(r.awb)+'</span>' : '<span class="mob-row-awb" style="color:#ccc;">No AWB</span>') +
     '</div>' +
-    // Dispatch date + status badge — shown only for the dispatch tab
-    (tab === 'dispatch' ? (
+    // Dispatch date — shown on shipments, dispatch, and handover tabs
+    (( tab === 'dispatch' || tab === 'shipments' || tab === 'handover') && r.dispatchDate ? (
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">' +
+        (tab === 'dispatch' ?
+          (r._status === 'overdue'  ? '<span class="dispatch-badge badge-overdue">&#x1F534; Overdue</span>' :
+           r._status === 'today'   ? '<span class="dispatch-badge badge-today">&#x1F7E1; Today</span>' :
+           r._status === 'upcoming'? '<span class="dispatch-badge badge-upcoming">&#x1F7E2; Upcoming</span>' :
+           r._status === 'future'  ? '<span class="dispatch-badge" style="background:#dbeafe;color:#1e40af;">&#x1F4C5; Scheduled</span>' :
+                                     '<span class="dispatch-badge badge-nodate">&#x26AA; No Date</span>')
+          : '') +
+        '<span style="font-size:11px;color:var(--gray);font-weight:700;letter-spacing:.5px;text-transform:uppercase;">Dispatch:</span>' +
+        '<span style="font-size:12px;font-weight:900;color:var(--black);">'+fmtDispatchDate(r.dispatchDate)+'</span>' +
+      '</div>'
+    ) : (tab === 'dispatch' ?
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
         (r._status === 'overdue'  ? '<span class="dispatch-badge badge-overdue">&#x1F534; Overdue</span>' :
          r._status === 'today'   ? '<span class="dispatch-badge badge-today">&#x1F7E1; Today</span>' :
          r._status === 'upcoming'? '<span class="dispatch-badge badge-upcoming">&#x1F7E2; Upcoming</span>' :
          r._status === 'future'  ? '<span class="dispatch-badge" style="background:#dbeafe;color:#1e40af;">&#x1F4C5; Scheduled</span>' :
                                    '<span class="dispatch-badge badge-nodate">&#x26AA; No Date</span>') +
-        (r.dispatchDate ? '<span style="font-size:12px;font-weight:700;color:var(--black);">'+fmtDispatchDate(r.dispatchDate)+'</span>' : '') +
-      '</div>'
-    ) : '') +
+      '</div>' : '')) +
     '<div class="mob-row-mid">' +
       svcBadge +
       '<span class="mob-row-loc">'+esc(r.city)+(r.state?', '+esc(r.state):'')+'</span>' +
