@@ -1963,7 +1963,7 @@ function labelHTML(row, uid) {
 
     // FOOTER
     '<div class="sl-foot">' +
-      '<span>'+esc(row.awb||'—')+'</span>' +
+      '<span>'+esc(maskAwb(row.awb)||'—')+'</span>' +
       '<span>'+esc(row.company||'OMIOR')+'</span>' +
       '<span>'+esc(row.invNum)+'</span>' +
     '</div>' +
@@ -1990,6 +1990,9 @@ function initCodes(row, uid) {
 function billHTML(row) {
   const air = row.svc.toLowerCase().includes('air');
   const modeText = air ? '✈ BY AIR' : '🚚 BY SURFACE';
+  // Show full AWB only when customer has fully paid; mask it while payment is pending
+  const isPaid = row.payRcv >= row.billAmt - 0.01;
+  const displayAwb = row.awb ? (isPaid ? row.awb : maskAwb(row.awb)) : '—';
   return (
     '<div class="courier-bill">' +
     '<div class="bill-head">' +
@@ -2034,7 +2037,7 @@ function billHTML(row) {
       '</tr></thead>' +
       '<tbody><tr>' +
         '<td class="c-desc">'+esc(row.company||row.svc)+' Courier</td>' +
-        '<td class="c-awb bill-awb-td">'+esc(row.awb||'—')+'</td>' +
+        '<td class="c-awb bill-awb-td">'+esc(displayAwb)+'</td>' +
         '<td class="c-wt">'+row.weight+' kg</td>' +
         '<td class="c-rate">\u20B9'+row.rate+'/kg</td>' +
         '<td class="c-amt" style="font-weight:900;">\u20B9'+fmt(row.billAmt)+'</td>' +
@@ -2055,10 +2058,10 @@ function billHTML(row) {
       '</div>' +
     '</div>' +
     '<div class="bill-awb-strip">' +
-      '<div><div class="bill-pay-lbl">AWB / Tracking</div><div class="bill-awb-num">'+esc(row.awb||'—')+'</div></div>' +
+      '<div><div class="bill-pay-lbl">AWB / Tracking</div><div class="bill-awb-num">'+esc(displayAwb)+'</div></div>' +
       '<div style="text-align:right;"><div class="bill-pay-lbl">Mode</div><div class="bill-svc-mode">'+modeText+'</div></div>' +
     '</div>' +
-    '<div class="bill-foot">Thank you for choosing OMIOR | '+esc(row.invNum)+' | Computer generated invoice</div>' +
+    '<div class="bill-foot">Thank you for choosing OMIOR | '+esc(row.invNum)+' | Computer generated invoice'+(isPaid ? '' : ' | AWB released upon full payment')+'</div>' +
     '</div>'
   );
 }
@@ -3928,39 +3931,95 @@ renderHandover = function() {
 function injectMobCards(tbodyId, tab) {
   const tbody = document.getElementById(tbodyId);
   if (!tbody) return;
-  // Remove existing mob cards first
-  tbody.parentElement.querySelectorAll('.mob-card-row').forEach(el => el.remove());
-  if (window.innerWidth > 900) return; // desktop — skip
 
-  let rows = [];
-  if (tab === 'shipments') rows = filteredData;
-  else if (tab === 'custpending') rows = getCustPendingRows();
-  else if (tab === 'dispatch') {
-    const filter = (document.getElementById('dpFilter')||{value:'all'}).value;
-    rows = allData.filter(r => !r.awb || !r.awb.trim());
-    if (filter === 'overdue')  rows = rows.filter(r => getDispatchStatus(r.dispatchDate)==='overdue');
-    if (filter === 'today')    rows = rows.filter(r => getDispatchStatus(r.dispatchDate)==='today');
-    if (filter === 'upcoming') rows = rows.filter(r => ['upcoming','today'].includes(getDispatchStatus(r.dispatchDate)));
-    if (filter === 'nodate')   rows = rows.filter(r => getDispatchStatus(r.dispatchDate)==='nodate');
-  }
-  else if (tab === 'handover') rows = getHandoverRows();
-
-  if (!rows.length) return;
-
-  // Add mobile cards AFTER the table
+  // ── Dedicated container per tab — created once, cleared every call ──
+  const containerId = 'mob-cards-' + tab;
   const tableWrap = tbody.closest('[style*="overflow-x"]') || tbody.closest('.card');
   if (!tableWrap) return;
-  const frag = document.createDocumentFragment();
+
+  let container = document.getElementById(containerId);
+  if (!container) {
+    container = document.createElement('div');
+    container.id = containerId;
+    tableWrap.after(container);   // insert once, right after the table wrapper
+  }
+  container.innerHTML = '';       // always clear — this is the ONLY cleanup needed
+
+  // Show/hide desktop table
+  const tableEl = tbody.closest('table');
+  if (window.innerWidth > 900) {
+    if (tableEl) tableEl.classList.remove('mob-hide-mobile');
+    return;
+  }
+  if (tableEl) tableEl.classList.add('mob-hide-mobile');
+
+  // ── Build rows for each tab, matching exactly what the render function used ──
+  let rows = [];
+  if (tab === 'shipments') {
+    rows = filteredData;
+  } else if (tab === 'custpending') {
+    const search = (document.getElementById('cpSearch')||{value:''}).value.toLowerCase().trim();
+    const filter = (document.getElementById('cpFilter')||{value:'all'}).value;
+    const sortBy = (document.getElementById('cpSort')||{value:'due-desc'}).value;
+    rows = getCustPendingRows();
+    if (filter === 'full')    rows = rows.filter(r => r.payRcv <= 0.01);
+    if (filter === 'partial') rows = rows.filter(r => r.payRcv > 0.01);
+    if (search) rows = rows.filter(r =>
+      (r.customerName||'').toLowerCase().includes(search) ||
+      (r.awb||'').toLowerCase().includes(search) ||
+      (r.mobile||'').toLowerCase().includes(search) ||
+      (r.city||'').toLowerCase().includes(search));
+    rows = [...rows].sort((a, b) => {
+      const dA = Math.round((a.billAmt - a.payRcv)*100)/100;
+      const dB = Math.round((b.billAmt - b.payRcv)*100)/100;
+      if (sortBy === 'due-desc')  return dB - dA;
+      if (sortBy === 'due-asc')   return dA - dB;
+      if (sortBy === 'name-asc')  return (a.customerName||'').localeCompare(b.customerName||'');
+      if (sortBy === 'name-desc') return (b.customerName||'').localeCompare(a.customerName||'');
+      return 0;
+    });
+  } else if (tab === 'dispatch') {
+    // Mirror renderDispatch exactly — same filter, same sort
+    const filter = (document.getElementById('dpFilter')||{value:'all'}).value;
+    const pending = allData.filter(r => !r.awb || !r.awb.trim());
+    const withStatus = pending.map(r => ({ ...r, _status: getDispatchStatus(r.dispatchDate) }));
+    let filtered = withStatus;
+    if (filter === 'overdue')  filtered = withStatus.filter(r => r._status === 'overdue');
+    if (filter === 'today')    filtered = withStatus.filter(r => r._status === 'today');
+    if (filter === 'upcoming') filtered = withStatus.filter(r => r._status === 'upcoming' || r._status === 'today');
+    if (filter === 'nodate')   filtered = withStatus.filter(r => r._status === 'nodate');
+    const statusOrder = { overdue:0, today:1, upcoming:2, future:3, nodate:4 };
+    filtered.sort((a, b) => {
+      const so = statusOrder[a._status] - statusOrder[b._status];
+      if (so !== 0) return so;
+      const da = parseDispatchDate(a.dispatchDate);
+      const db = parseDispatchDate(b.dispatchDate);
+      if (!da && !db) return 0;
+      if (!da) return 1;
+      if (!db) return -1;
+      return da - db;
+    });
+    rows = filtered;
+  } else if (tab === 'handover') {
+    const search   = (document.getElementById('hoSearch')||{value:''}).value.toLowerCase().trim();
+    const coFilter = (document.getElementById('hoCompanyFilter')||{value:''}).value.toLowerCase().trim();
+    rows = getHandoverRows();
+    if (search)   rows = rows.filter(r =>
+      (r.awb||'').toLowerCase().includes(search) ||
+      (r.customerName||'').toLowerCase().includes(search) ||
+      (r.company||'').toLowerCase().includes(search));
+    if (coFilter) rows = rows.filter(r => (r.company||'Unknown').toLowerCase() === coFilter);
+    rows.sort((a, b) => {
+      const co = (a.company||'').localeCompare(b.company||'');
+      return co !== 0 ? co : (a.customerName||'').localeCompare(b.customerName||'');
+    });
+  }
+
   rows.forEach(r => {
     const div = document.createElement('div');
     div.innerHTML = mobCardRow(r, tab);
-    frag.appendChild(div.firstChild);
+    container.appendChild(div.firstChild);
   });
-  // Insert after the overflow-x wrapper
-  tableWrap.after(frag);
-  // Hide the table header/rows on mobile
-  const tableEl = tbody.closest('table');
-  if (tableEl) tableEl.classList.add('mob-hide-mobile');
 }
 
 // Re-render mobile cards on resize
