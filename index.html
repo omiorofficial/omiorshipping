@@ -3869,11 +3869,28 @@ function mobCardRow(r, tab) {
       '</div>';
   }
 
-  return '<div class="mob-card-row" id="mob-row-'+r.id+'">' +
+  const dispatchBg = tab === 'dispatch'
+    ? (r._status === 'overdue'  ? 'background:#fff3f3;' :
+       r._status === 'today'    ? 'background:#fff8e1;' :
+       r._status === 'upcoming' ? 'background:#f0fff4;' : '')
+    : '';
+
+  return '<div class="mob-card-row" id="mob-row-'+r.id+'" style="'+dispatchBg+'">' +
     '<div class="mob-row-top">' +
       '<span class="mob-row-name">'+esc(r.customerName)+'</span>' +
       (r.awb ? '<span class="mob-row-awb">'+esc(r.awb)+'</span>' : '<span class="mob-row-awb" style="color:#ccc;">No AWB</span>') +
     '</div>' +
+    // Dispatch date + status badge — shown only for the dispatch tab
+    (tab === 'dispatch' ? (
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">' +
+        (r._status === 'overdue'  ? '<span class="dispatch-badge badge-overdue">&#x1F534; Overdue</span>' :
+         r._status === 'today'   ? '<span class="dispatch-badge badge-today">&#x1F7E1; Today</span>' :
+         r._status === 'upcoming'? '<span class="dispatch-badge badge-upcoming">&#x1F7E2; Upcoming</span>' :
+         r._status === 'future'  ? '<span class="dispatch-badge" style="background:#dbeafe;color:#1e40af;">&#x1F4C5; Scheduled</span>' :
+                                   '<span class="dispatch-badge badge-nodate">&#x26AA; No Date</span>') +
+        (r.dispatchDate ? '<span style="font-size:12px;font-weight:700;color:var(--black);">'+fmtDispatchDate(r.dispatchDate)+'</span>' : '') +
+      '</div>'
+    ) : '') +
     '<div class="mob-row-mid">' +
       svcBadge +
       '<span class="mob-row-loc">'+esc(r.city)+(r.state?', '+esc(r.state):'')+'</span>' +
