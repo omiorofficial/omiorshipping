@@ -514,9 +514,8 @@ max-width:260px;
   #printArea,#printArea *{visibility:visible!important;}
   #printArea{position:fixed;top:0;left:0;width:100%;background:#fff;z-index:99999;}
   .no-print{display:none!important;}
-  @page{size:100mm 152mm;margin:1.5mm;}
-  .shipping-label{
-    width:96mm!important;max-width:96mm!important;border:1.5px solid #000!important;
+  @page{size:101mm 152mm;margin:1.0mm;}
+  .shipping-label{width:101mm!important;height:152mm!important;max-width:101mm!important; overflow:hidden!important;border:1.0px solid #000!important;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
     page-break-inside:avoid;break-inside:avoid;
   }
@@ -2243,8 +2242,8 @@ ${labelStyles}
 body{background:#fff;}
 @media print{
   body *{visibility:visible!important;}
-  @page{size:100mm 152mm;margin:1.5mm;}
-  .shipping-label{width:96mm!important;max-width:96mm!important;border:1.5px solid #000!important;
+  @page{size:101mm 152mm;margin:1.5mm;}
+  .shipping-label{width:101mm!important;height:152mm!important;max-width:101mm!important; overflow:hidden!important;border:1.0px solid #000!important;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;page-break-inside:avoid;break-inside:avoid;}
   .sl-head,.sl-svc,.sl-co-strip,.sl-from,.sl-foot{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .page-sep{page-break-after:always;break-after:page;}
