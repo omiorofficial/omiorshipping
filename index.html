@@ -2092,18 +2092,65 @@ function prevBill(id) {
 
 // ═══════════════════ PRINT ═══════════════════
 function printOne(id) {
-  const row = allData.find(r=>r.id===id); if(!row) return;
-  const uid = 'p_'+id+'_'+Date.now();
-  const pa = document.getElementById('printArea');
-  pa.innerHTML = labelHTML(row, uid);
-  pa.style.display = 'block';
-  setTimeout(() => {
-    initCodes(row, uid);
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => { pa.style.display='none'; pa.innerHTML=''; }, 600);
-    }, 400);
-  }, 50);
+  const row = allData.find(r => r.id === id);
+  if (!row) return;
+  const uid = 'p_' + id + '_' + Date.now();
+
+  const labelStyles = Array.from(document.styleSheets)
+    .flatMap(ss => { try { return Array.from(ss.cssRules).map(r => r.cssText); } catch(e) { return []; } })
+    .join('\n');
+
+  const win = window.open('', '_blank', 'width=800,height=600');
+  if (!win) { toast('Allow pop-ups to print', 'err'); return; }
+
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Label</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"><\/script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
+<style>
+${labelStyles}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{background:#fff;}
+@media print{
+  body *{visibility:visible!important;}
+  @page{size:101mm 152mm;margin:0;}
+  .shipping-label{width:101mm!important;height:152mm!important;max-width:101mm!important;max-height:152mm!important;overflow:hidden!important;border:1.0px solid #000!important;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .sl-head,.sl-svc,.sl-co-strip,.sl-from,.sl-foot{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+}
+</style></head><body>${labelHTML(row, uid)}</body></html>`);
+  win.document.close();
+
+  win.onload = function () {
+    let attempts = 0;
+    const poll = setInterval(() => {
+      attempts++;
+      if (win.JsBarcode && win.QRCode) { clearInterval(poll); initInWin(); }
+      else if (attempts > 40) { clearInterval(poll); initInWin(); }
+    }, 150);
+
+    function initInWin() {
+      if (row.awb && row.awb.trim()) {
+        try {
+          win.JsBarcode('#bc_' + uid, row.awb, {
+            format: 'CODE128', width: 1.8, height: 38,
+            displayValue: false, margin: 0, background: 'transparent'
+          });
+        } catch(e) {}
+        const qrEl = win.document.getElementById('qr_' + uid);
+        if (qrEl) {
+          qrEl.innerHTML = '';
+          try {
+            new win.QRCode(qrEl, {
+              text: 'AWB:' + row.awb + '|' + row.customerName + '|' + row.mobile,
+              width: 70, height: 70, colorDark: '#000', colorLight: '#fff',
+              correctLevel: win.QRCode.CorrectLevel.M
+            });
+          } catch(e) {}
+        }
+      }
+      setTimeout(() => { win.focus(); win.print(); setTimeout(() => win.close(), 1000); }, 800);
+    }
+  };
 }
 
 function printModalLabel() {
@@ -2238,8 +2285,8 @@ function printBulk(rows) {
   if (!win) { toast('Allow pop-ups to print multiple labels', 'err'); return; }
 
   const items = rows.map((row, i) => ({ row, uid: 'bp_' + row.id + '_' + i }));
-  const labelsHtml = items.map(({row, uid}) =>
-    '<div class="page-sep" style="page-break-after:always;break-after:page;">' + labelHTML(row, uid) + '</div>'
+  const labelsHtml = items.map(({row, uid}, i) =>
+    '<div class="page-sep"' + (i < items.length - 1 ? ' style="page-break-after:always;break-after:page;"' : '') + '>' + labelHTML(row, uid) + '</div>'
   ).join('');
 
   win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Labels</title>
@@ -2251,11 +2298,11 @@ ${labelStyles}
 body{background:#fff;}
 @media print{
   body *{visibility:visible!important;}
-  @page{size:101mm 152mm;margin:1.5mm;}
-  .shipping-label{width:101mm!important;height:152mm!important;max-width:101mm!important; overflow:hidden!important;border:1.0px solid #000!important;
-    -webkit-print-color-adjust:exact;print-color-adjust:exact;page-break-inside:avoid;break-inside:avoid;}
+  @page{size:101mm 152mm;margin:0;}
+  .shipping-label{width:101mm!important;height:152mm!important;max-width:101mm!important;max-height:152mm!important; overflow:hidden!important;border:1.0px solid #000!important;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .sl-head,.sl-svc,.sl-co-strip,.sl-from,.sl-foot{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  .page-sep{page-break-after:always;break-after:page;}
+  .page-sep:not(:last-child){page-break-after:always;break-after:page;}
 }
 </style></head><body>${labelsHtml}</body></html>`);
   win.document.close();
@@ -2284,11 +2331,13 @@ body{background:#fff;}
         }
       });
       // Give QR/barcode time to fully render before printing
-      setTimeout(() => {
-        win.focus();
-        win.print();
-        setTimeout(() => win.close(), 1000);
-      }, 800);
+   setTimeout(() => {
+  const lbl = win.document.querySelector('.shipping-label');
+  win.alert('HEIGHT: ' + lbl.getBoundingClientRect().height + '\nSCROLL: ' + lbl.scrollHeight);
+  win.focus();
+  win.print();
+  setTimeout(() => win.close(), 1000);
+}, 800);
     };
 
     // Poll until JsBarcode and QRCode are available (scripts may still be loading)
