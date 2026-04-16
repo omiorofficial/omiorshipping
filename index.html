@@ -2332,8 +2332,6 @@ body{background:#fff;}
       });
       // Give QR/barcode time to fully render before printing
    setTimeout(() => {
-  const lbl = win.document.querySelector('.shipping-label');
-  win.alert('HEIGHT: ' + lbl.getBoundingClientRect().height + '\nSCROLL: ' + lbl.scrollHeight);
   win.focus();
   win.print();
   setTimeout(() => win.close(), 1000);
