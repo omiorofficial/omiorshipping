@@ -1613,8 +1613,8 @@ function parseRows(rows) {
       const payRcv = parseRs(g(row,'payRcv'));
       const billFixed = payDue > 0 ? payDue : parseRs(g(row,'payRcv'));
       const wRaw = parseFloat(g(row,'weight')) || 0;
-      const w = billFixed > 0 ? Math.round((billFixed / rate) * 100) / 100 : Math.round(wRaw * 100) / 100;
-      const bill = billFixed > 0 ? billFixed : Math.round(wRaw * rate * 100) / 100;
+const w = wRaw > 0 ? Math.round(wRaw * 100) / 100 : (billFixed > 0 ? Math.round((billFixed / rate) * 100) / 100 : 0);
+const bill = billFixed > 0 ? billFixed : Math.round(wRaw * rate * 100) / 100;
       const _payToCourierRaw = (g(row,'payToCourier') || '').toString().trim();
       const payToCourier  = parseRs(_payToCourierRaw);
       const payToCourierSet = _payToCourierRaw !== '';  // true = explicitly set (even if 0)
@@ -2112,7 +2112,7 @@ ${labelStyles}
 body{background:#fff;}
 @media print{
   body *{visibility:visible!important;}
-  @page{size:101mm 152mm;margin:0;}
+  @page{size:101mm 152mm;margin:1.00mm;}
   .shipping-label{width:101mm!important;height:152mm!important;max-width:101mm!important;max-height:152mm!important;overflow:hidden!important;border:1.0px solid #000!important;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .sl-head,.sl-svc,.sl-co-strip,.sl-from,.sl-foot{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
@@ -2298,7 +2298,7 @@ ${labelStyles}
 body{background:#fff;}
 @media print{
   body *{visibility:visible!important;}
-  @page{size:101mm 152mm;margin:0;}
+  @page{size:101mm 152mm;margin:1.00mm;}
   .shipping-label{width:101mm!important;height:152mm!important;max-width:101mm!important;max-height:152mm!important; overflow:hidden!important;border:1.0px solid #000!important;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .sl-head,.sl-svc,.sl-co-strip,.sl-from,.sl-foot{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
