@@ -514,11 +514,8 @@ max-width:260px;
   #printArea,#printArea *{visibility:visible!important;}
   #printArea{position:fixed;top:0;left:0;width:100%;background:#fff;z-index:99999;}
   .no-print{display:none!important;}
-  /* Remove mobile card rows from layout entirely — visibility:hidden still occupies space */
-  .mob-card-row,[id^="mob-cards-"]{display:none!important;}
-  @page{size:100mm 152mm;margin:1.5mm;}
-  .shipping-label{
-    width:96mm!important;max-width:96mm!important;border:1.5px solid #000!important;
+  @page{size:101mm 152mm;margin:1.0mm;}
+  .shipping-label{width:101mm!important;height:152mm!important;max-width:101mm!important; overflow:hidden!important;border:1.0px solid #000!important;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
     page-break-inside:avoid;break-inside:avoid;
   }
@@ -1477,6 +1474,9 @@ const COL = {
   'address city':'city','city':'city',
   'address state':'state','state':'state',
   'address pincode':'pincode','pincode':'pincode','pin code':'pincode',
+  // ── country ──
+  'country':'country',
+  'address country':'country',
   // ── Contact ──
   'customer whatsapp number':'mobile','mobile number':'mobile','mobile':'mobile','phone':'mobile','contact':'mobile',
   'alternate number':'altMobile','alternate mobile':'altMobile','alt mobile':'altMobile','alt number':'altMobile','alternate phone':'altMobile','alternative number':'altMobile','alternative mobile':'altMobile','second number':'altMobile','phone 2':'altMobile','mobile 2':'altMobile',
@@ -1613,8 +1613,8 @@ function parseRows(rows) {
       const payRcv = parseRs(g(row,'payRcv'));
       const billFixed = payDue > 0 ? payDue : parseRs(g(row,'payRcv'));
       const wRaw = parseFloat(g(row,'weight')) || 0;
-      const w = billFixed > 0 ? Math.round((billFixed / rate) * 100) / 100 : Math.round(wRaw * 100) / 100;
-      const bill = billFixed > 0 ? billFixed : Math.round(wRaw * rate * 100) / 100;
+const w = wRaw > 0 ? Math.round(wRaw * 100) / 100 : (billFixed > 0 ? Math.round((billFixed / rate) * 100) / 100 : 0);
+const bill = billFixed > 0 ? billFixed : Math.round(wRaw * rate * 100) / 100;
       const _payToCourierRaw = (g(row,'payToCourier') || '').toString().trim();
       const payToCourier  = parseRs(_payToCourierRaw);
       const payToCourierSet = _payToCourierRaw !== '';  // true = explicitly set (even if 0)
@@ -1641,6 +1641,7 @@ function parseRows(rows) {
         city:          g(row,'city'),
         state:         g(row,'state'),
         pincode:       g(row,'pincode'),
+		country:       g(row,'country'),
         mobile:        g(row,'mobile'),
         altMobile:     g(row,'altMobile'),
         svc, rate, weight: w, billAmt: bill,
@@ -1815,7 +1816,28 @@ function saveAwbEdit() {
     payToCourier: ptcField !== '' ? String(newPayToCourier) : undefined,
     payToCourierProvided: ptcField !== '',
     customerName: row.customerName, firstName: row.firstName || '', lastName: row.lastName || '', oldAwb: oldAwb, rowNum: row.rowNum || '' }];
-  syncInBatches(url, 'updateAwbCourier', payload, 'AWB, Courier, Service Type & Amounts synced to sheet');
+  const fullUrl = url + '?action=updateAwbCourier&updates=' + encodeURIComponent(JSON.stringify(payload));
+  console.log('OMIOR sync URL:', fullUrl);
+  console.log('OMIOR payload:', JSON.stringify(payload));
+  fetch(fullUrl)
+    .then(r => {
+      console.log('OMIOR HTTP status:', r.status, r.statusText);
+      return r.text();
+    })
+    .then(text => {
+      console.log('OMIOR raw response:', text);
+      try {
+        const j = JSON.parse(text);
+        if (j.ok) toast('✔ AWB, Courier, Service Type &amp; Amounts synced to sheet!', 'ok');
+        else      toast('Sheet error: ' + (j.error || 'Unknown') + ' — check Console (F12)', 'err');
+      } catch(e) {
+        toast('Response not JSON — check Console (F12) for details', 'err');
+      }
+    })
+    .catch(e => {
+      console.error('OMIOR fetch error:', e);
+      toast('Sync error: ' + e.message + ' — check Console (F12)', 'err');
+    });
 }
 
 
@@ -1869,10 +1891,15 @@ function labelHTML(row, uid) {
   // Mode: single icon only
   const modeText = air ? '✈ BY AIR' : '🚚 BY SURFACE';
   const a1 = (row.address1||'').trim(), a2 = (row.address2||'').trim();
-  const city = (row.city||'').trim(), st = (row.state||'').trim(), pin = (row.pincode||'').trim();
-  const addrParts = [a1,a2].filter(Boolean);
-  const cityStr = [city,st].filter(Boolean).join(', ') + (pin ? ' - '+pin : '');
-  if (cityStr.trim()) addrParts.push(cityStr);
+const city = (row.city||'').trim(), st = (row.state||'').trim(), pin = (row.pincode||'').trim();
+const country = (row.country || 'India').trim(); // 👈 ADD THIS
+
+const addrParts = [a1,a2].filter(Boolean);
+
+const cityStr = [city,st].filter(Boolean).join(', ') + (pin ? ' - '+pin : '');
+if (cityStr.trim()) addrParts.push(cityStr);
+
+if (country) addrParts.push(country); // 👈 ADD THIS LINE
 
   const hasAWB = row.awb && row.awb.trim().length > 0;
   const printTime = nowStamp();
@@ -2065,18 +2092,65 @@ function prevBill(id) {
 
 // ═══════════════════ PRINT ═══════════════════
 function printOne(id) {
-  const row = allData.find(r=>r.id===id); if(!row) return;
-  const uid = 'p_'+id+'_'+Date.now();
-  const pa = document.getElementById('printArea');
-  pa.innerHTML = labelHTML(row, uid);
-  pa.style.display = 'block';
-  setTimeout(() => {
-    initCodes(row, uid);
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => { pa.style.display='none'; pa.innerHTML=''; }, 600);
-    }, 400);
-  }, 50);
+  const row = allData.find(r => r.id === id);
+  if (!row) return;
+  const uid = 'p_' + id + '_' + Date.now();
+
+  const labelStyles = Array.from(document.styleSheets)
+    .flatMap(ss => { try { return Array.from(ss.cssRules).map(r => r.cssText); } catch(e) { return []; } })
+    .join('\n');
+
+  const win = window.open('', '_blank', 'width=800,height=600');
+  if (!win) { toast('Allow pop-ups to print', 'err'); return; }
+
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Label</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"><\/script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
+<style>
+${labelStyles}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{background:#fff;}
+@media print{
+  body *{visibility:visible!important;}
+  @page{size:101mm 152mm;margin:1.00mm;}
+  .shipping-label{width:101mm!important;height:152mm!important;max-width:101mm!important;max-height:152mm!important;overflow:hidden!important;border:1.0px solid #000!important;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .sl-head,.sl-svc,.sl-co-strip,.sl-from,.sl-foot{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+}
+</style></head><body>${labelHTML(row, uid)}</body></html>`);
+  win.document.close();
+
+  win.onload = function () {
+    let attempts = 0;
+    const poll = setInterval(() => {
+      attempts++;
+      if (win.JsBarcode && win.QRCode) { clearInterval(poll); initInWin(); }
+      else if (attempts > 40) { clearInterval(poll); initInWin(); }
+    }, 150);
+
+    function initInWin() {
+      if (row.awb && row.awb.trim()) {
+        try {
+          win.JsBarcode('#bc_' + uid, row.awb, {
+            format: 'CODE128', width: 1.8, height: 38,
+            displayValue: false, margin: 0, background: 'transparent'
+          });
+        } catch(e) {}
+        const qrEl = win.document.getElementById('qr_' + uid);
+        if (qrEl) {
+          qrEl.innerHTML = '';
+          try {
+            new win.QRCode(qrEl, {
+              text: 'AWB:' + row.awb + '|' + row.customerName + '|' + row.mobile,
+              width: 70, height: 70, colorDark: '#000', colorLight: '#fff',
+              correctLevel: win.QRCode.CorrectLevel.M
+            });
+          } catch(e) {}
+        }
+      }
+      setTimeout(() => { win.focus(); win.print(); setTimeout(() => win.close(), 1000); }, 800);
+    }
+  };
 }
 
 function printModalLabel() {
@@ -2211,8 +2285,8 @@ function printBulk(rows) {
   if (!win) { toast('Allow pop-ups to print multiple labels', 'err'); return; }
 
   const items = rows.map((row, i) => ({ row, uid: 'bp_' + row.id + '_' + i }));
-  const labelsHtml = items.map(({row, uid}) =>
-    '<div class="page-sep" style="page-break-after:always;break-after:page;">' + labelHTML(row, uid) + '</div>'
+  const labelsHtml = items.map(({row, uid}, i) =>
+    '<div class="page-sep"' + (i < items.length - 1 ? ' style="page-break-after:always;break-after:page;"' : '') + '>' + labelHTML(row, uid) + '</div>'
   ).join('');
 
   win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Labels</title>
@@ -2224,11 +2298,11 @@ ${labelStyles}
 body{background:#fff;}
 @media print{
   body *{visibility:visible!important;}
-  @page{size:100mm 152mm;margin:1.5mm;}
-  .shipping-label{width:96mm!important;max-width:96mm!important;border:1.5px solid #000!important;
-    -webkit-print-color-adjust:exact;print-color-adjust:exact;page-break-inside:avoid;break-inside:avoid;}
+  @page{size:101mm 152mm;margin:1.00mm;}
+  .shipping-label{width:101mm!important;height:152mm!important;max-width:101mm!important;max-height:152mm!important; overflow:hidden!important;border:1.0px solid #000!important;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .sl-head,.sl-svc,.sl-co-strip,.sl-from,.sl-foot{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  .page-sep{page-break-after:always;break-after:page;}
+  .page-sep:not(:last-child){page-break-after:always;break-after:page;}
 }
 </style></head><body>${labelsHtml}</body></html>`);
   win.document.close();
@@ -2257,11 +2331,11 @@ body{background:#fff;}
         }
       });
       // Give QR/barcode time to fully render before printing
-      setTimeout(() => {
-        win.focus();
-        win.print();
-        setTimeout(() => win.close(), 1000);
-      }, 800);
+   setTimeout(() => {
+  win.focus();
+  win.print();
+  setTimeout(() => win.close(), 1000);
+}, 800);
     };
 
     // Poll until JsBarcode and QRCode are available (scripts may still be loading)
@@ -2549,15 +2623,27 @@ function syncCustRcv(row, msg) {
     toast(msg + ' (local only — update sheet manually)', 'ok');
     return;
   }
+  toast('Syncing to sheet...', '');
   const updates = [{ sheetRow: row.sheetRow||0, awb: row.awb, customerName: row.customerName, firstName: row.firstName||'', lastName: row.lastName||'', rowNum: row.rowNum||'', payRcv: row.payRcv }];
-  syncInBatches(url, 'markCustRcv', updates, msg, () => {
-    // After payment recorded, clear STATUS1 to trigger automation
-    const clrUpdates = [{ sheetRow: row.sheetRow||0, awb: row.awb, customerName: row.customerName, firstName: row.firstName||'', lastName: row.lastName||'', rowNum: row.rowNum||'' }];
-    fetch(url + '?action=clearStatus1&updates=' + encodeURIComponent(JSON.stringify(clrUpdates)))
-      .then(r2 => r2.json())
-      .then(j2 => { if (!j2.ok) toast('STATUS1 clear: ' + (j2.error || 'Unknown'), 'err'); })
-      .catch(e2 => toast('STATUS1 clear error: ' + e2.message, 'err'));
-  });
+  fetch(url + '?action=markCustRcv&updates=' + encodeURIComponent(JSON.stringify(updates)))
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(j => {
+      if (j.ok) {
+        toast('✔ ' + msg + ' — Sheet synced!', 'ok');
+        // Clear STATUS1 cell to trigger external automation
+        const clrUpdates = [{ sheetRow: row.sheetRow||0, awb: row.awb, customerName: row.customerName, firstName: row.firstName||'', lastName: row.lastName||'', rowNum: row.rowNum||'' }];
+        fetch(url + '?action=clearStatus1&updates=' + encodeURIComponent(JSON.stringify(clrUpdates)))
+          .then(r2 => r2.json())
+          .then(j2 => {
+            if (j2.ok) toast('✔ STATUS1 cleared', 'ok');
+            else toast('STATUS1 clear: ' + (j2.error || 'Unknown'), 'err');
+          })
+          .catch(e2 => toast('STATUS1 clear error: ' + e2.message, 'err'));
+      } else {
+        toast('Sheet error: ' + (j.error || 'Unknown') + '. Data saved locally.', 'err');
+      }
+    })
+    .catch(e => toast('Sync error: ' + e.message + '. Data saved locally.', 'err'));
 }
 
 function exportPendingCSV() {
@@ -2993,54 +3079,6 @@ function markAllCourierPaid() {
   });
 }
 
-// ── Generic batched GET sender ─────────────────────────────────────────────
-// Splits `updates` into chunks of BATCH_SIZE, fires them sequentially,
-// and only calls onDone/toast after ALL batches succeed (or the first fails).
-const BATCH_SIZE = 10;
-
-function syncInBatches(url, action, updates, successMsg, onDone) {
-  if (!updates.length) { if (onDone) onDone(); return; }
-
-  const chunks = [];
-  for (let i = 0; i < updates.length; i += BATCH_SIZE) {
-    chunks.push(updates.slice(i, i + BATCH_SIZE));
-  }
-
-  const total   = chunks.length;
-  let   current = 0;
-
-  function sendNext() {
-    if (current >= total) {
-      toast('✔ ' + (successMsg || 'Updated') + ' — Sheet synced!', 'ok');
-      if (onDone) onDone();
-      return;
-    }
-    const chunk   = chunks[current];
-    const fetchUrl = url + '?action=' + action + '&updates=' + encodeURIComponent(JSON.stringify(chunk));
-    current++;
-
-    if (total > 1) toast('Syncing batch ' + current + ' of ' + total + '...', '');
-
-    fetch(fetchUrl)
-      .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
-      .then(data => {
-        if (data && data.ok) {
-          sendNext();
-        } else {
-          toast('Sheet error (batch ' + current + '): ' + (data.error || 'Unknown'), 'err');
-          if (onDone) onDone();
-        }
-      })
-      .catch(e => {
-        toast('Sync failed (batch ' + current + '): ' + e.message, 'err');
-        if (onDone) onDone();
-      });
-  }
-
-  toast('Syncing to sheet' + (total > 1 ? ' (' + updates.length + ' records, ' + total + ' batches)' : '') + '...', '');
-  sendNext();
-}
-
 function syncCourierPaid(updates, successMsg, onDone) {
   const url = (document.getElementById('appsScriptUrl').value || '').trim() || localStorage.getItem(STORAGE_KEY) || '';
   if (!url || !url.includes('script.google.com')) {
@@ -3048,7 +3086,18 @@ function syncCourierPaid(updates, successMsg, onDone) {
     if (onDone) onDone();
     return;
   }
-  syncInBatches(url, 'markPaid', updates, successMsg, onDone);
+  toast('Syncing to sheet...', '');
+  const getUrl = url + '?action=markPaid&updates=' + encodeURIComponent(JSON.stringify(updates));
+  fetch(getUrl)
+    .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+    .then(data => {
+      if (data && data.ok) toast('✔ ' + (successMsg || 'Updated') + ' — Sheet synced!', 'ok');
+      else toast('Sheet error: ' + (data.error || 'Unknown'), 'err');
+      if (onDone) onDone();
+    }).catch(e => {
+      toast('Sync failed: ' + e.message, 'err');
+      if (onDone) onDone();
+    });
 }
 function nsVal(id) { return (document.getElementById(id).value || '').trim(); }
 function nsSet(msg, color) {
@@ -3277,6 +3326,7 @@ function saveHandoverAmount(id) {
     toast('₹' + fmt(amt) + ' saved locally. No sheet URL — update manually.', 'ok');
     return;
   }
+  toast('Syncing to sheet...', '');
   const payload = [{
     sheetRow: row.sheetRow||0,
     awb: row.awb, company: row.company, svc: row.svc,
@@ -3285,7 +3335,13 @@ function saveHandoverAmount(id) {
     firstName: row.firstName || '', lastName: row.lastName || '',
     oldAwb: row.awb, rowNum: row.rowNum || ''
   }];
-  syncInBatches(url, 'updateAwbCourier', payload, '₹' + fmt(amt) + ' saved for ' + row.customerName);
+  fetch(url + '?action=updateAwbCourier&updates=' + encodeURIComponent(JSON.stringify(payload)))
+    .then(res => res.json())
+    .then(j => {
+      if (j.ok) toast('✔ ₹' + fmt(amt) + ' saved for ' + row.customerName + ' — Sheet synced!', 'ok');
+      else      toast('Sheet error: ' + (j.error || 'Unknown'), 'err');
+    })
+    .catch(e => toast('Sync error: ' + e.message, 'err'));
 }
 
 // ═══════════════════ INDIA HEATMAP ═══════════════════
@@ -3673,8 +3729,15 @@ function inlineChangeSvc(id, selectEl) {
   if (!url || !url.includes('script.google.com')) {
     toast('Service Type changed to ' + newSvc + ' (local only)', 'ok'); return;
   }
+  toast('Updating Service Type to ' + newSvc + ' in sheet...', '');
   const payload = [{ sheetRow: row.sheetRow||0, awb: row.awb, customerName: row.customerName, firstName: row.firstName || '', lastName: row.lastName || '', rowNum: row.rowNum || '', svc: newSvc }];
-  syncInBatches(url, 'updateServiceType', payload, 'Service Type → ' + newSvc + ' saved for ' + row.customerName);
+  fetch(url + '?action=updateServiceType&updates=' + encodeURIComponent(JSON.stringify(payload)))
+    .then(r => r.json())
+    .then(j => {
+      if (j.ok) toast('✔ Service Type → ' + newSvc + ' saved for ' + row.customerName + '!', 'ok');
+      else toast('Sheet error: ' + (j.error || 'Unknown'), 'err');
+    })
+    .catch(e => toast('Sync error: ' + e.message, 'err'));
 }
 
 // ═══════════════════ RESEND TRACKING — clears STATUS1 in sheet ═══════════════════
@@ -3687,8 +3750,15 @@ function resendTracking(id) {
   if (!url || !url.includes('script.google.com')) {
     toast('No Apps Script URL — cannot clear STATUS1', 'err'); return;
   }
+  toast('Clearing STATUS1 for ' + row.customerName + '...', '');
   const payload = [{ sheetRow: row.sheetRow||0, awb: row.awb, customerName: row.customerName, firstName: row.firstName || '', lastName: row.lastName || '', rowNum: row.rowNum || '' }];
-  syncInBatches(url, 'clearStatus1', payload, 'STATUS1 cleared — Tracking resent for ' + row.customerName);
+  fetch(url + '?action=clearStatus1&updates=' + encodeURIComponent(JSON.stringify(payload)))
+    .then(r => r.json())
+    .then(j => {
+      if (j.ok) toast('✔ STATUS1 cleared — Tracking resent for ' + row.customerName + '!', 'ok');
+      else toast('Sheet error: ' + (j.error || 'Unknown'), 'err');
+    })
+    .catch(e => toast('Sync error: ' + e.message, 'err'));
 }
 
 // ═══════════════════ RESEND PAYMENT LINK — clears STATUS4 in sheet ═══════════════════
@@ -3701,8 +3771,15 @@ function resendPaymentLink(id) {
   if (!url || !url.includes('script.google.com')) {
     toast('No Apps Script URL — cannot clear STATUS4', 'err'); return;
   }
+  toast('Clearing STATUS4 for ' + row.customerName + '...', '');
   const payload = [{ sheetRow: row.sheetRow||0, awb: row.awb, customerName: row.customerName, firstName: row.firstName || '', lastName: row.lastName || '', rowNum: row.rowNum || '' }];
-  syncInBatches(url, 'clearStatus4', payload, 'STATUS4 cleared — Payment Link resent for ' + row.customerName);
+  fetch(url + '?action=clearStatus4&updates=' + encodeURIComponent(JSON.stringify(payload)))
+    .then(r => r.json())
+    .then(j => {
+      if (j.ok) toast('✔ STATUS4 cleared — Payment Link resent for ' + row.customerName + '!', 'ok');
+      else toast('Sheet error: ' + (j.error || 'Unknown'), 'err');
+    })
+    .catch(e => toast('Sync error: ' + e.message, 'err'));
 }
 
 function clearDpSelection() {
@@ -3858,27 +3935,17 @@ function mobCardRow(r, tab) {
       '<span class="mob-row-name">'+esc(r.customerName)+'</span>' +
       (r.awb ? '<span class="mob-row-awb">'+esc(r.awb)+'</span>' : '<span class="mob-row-awb" style="color:#ccc;">No AWB</span>') +
     '</div>' +
-    // Dispatch date — shown on shipments, dispatch, and handover tabs
-    (( tab === 'dispatch' || tab === 'shipments' || tab === 'handover') && r.dispatchDate ? (
+    // Dispatch date + status badge — shown only for the dispatch tab
+    (tab === 'dispatch' ? (
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">' +
-        (tab === 'dispatch' ?
-          (r._status === 'overdue'  ? '<span class="dispatch-badge badge-overdue">&#x1F534; Overdue</span>' :
-           r._status === 'today'   ? '<span class="dispatch-badge badge-today">&#x1F7E1; Today</span>' :
-           r._status === 'upcoming'? '<span class="dispatch-badge badge-upcoming">&#x1F7E2; Upcoming</span>' :
-           r._status === 'future'  ? '<span class="dispatch-badge" style="background:#dbeafe;color:#1e40af;">&#x1F4C5; Scheduled</span>' :
-                                     '<span class="dispatch-badge badge-nodate">&#x26AA; No Date</span>')
-          : '') +
-        '<span style="font-size:11px;color:var(--gray);font-weight:700;letter-spacing:.5px;text-transform:uppercase;">Dispatch:</span>' +
-        '<span style="font-size:12px;font-weight:900;color:var(--black);">'+fmtDispatchDate(r.dispatchDate)+'</span>' +
-      '</div>'
-    ) : (tab === 'dispatch' ?
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
         (r._status === 'overdue'  ? '<span class="dispatch-badge badge-overdue">&#x1F534; Overdue</span>' :
          r._status === 'today'   ? '<span class="dispatch-badge badge-today">&#x1F7E1; Today</span>' :
          r._status === 'upcoming'? '<span class="dispatch-badge badge-upcoming">&#x1F7E2; Upcoming</span>' :
          r._status === 'future'  ? '<span class="dispatch-badge" style="background:#dbeafe;color:#1e40af;">&#x1F4C5; Scheduled</span>' :
                                    '<span class="dispatch-badge badge-nodate">&#x26AA; No Date</span>') +
-      '</div>' : '')) +
+        (r.dispatchDate ? '<span style="font-size:12px;font-weight:700;color:var(--black);">'+fmtDispatchDate(r.dispatchDate)+'</span>' : '') +
+      '</div>'
+    ) : '') +
     '<div class="mob-row-mid">' +
       svcBadge +
       '<span class="mob-row-loc">'+esc(r.city)+(r.state?', '+esc(r.state):'')+'</span>' +
