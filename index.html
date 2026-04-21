@@ -3086,18 +3086,65 @@ function syncCourierPaid(updates, successMsg, onDone) {
     if (onDone) onDone();
     return;
   }
-  toast('Syncing to sheet...', '');
-  const getUrl = url + '?action=markPaid&updates=' + encodeURIComponent(JSON.stringify(updates));
-  fetch(getUrl)
-    .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
-    .then(data => {
-      if (data && data.ok) toast('✔ ' + (successMsg || 'Updated') + ' — Sheet synced!', 'ok');
-      else toast('Sheet error: ' + (data.error || 'Unknown'), 'err');
+
+  // ── Chunk into batches of 10 to stay well under URL length limits ──
+  const CHUNK_SIZE = 10;
+  const chunks = [];
+  for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
+    chunks.push(updates.slice(i, i + CHUNK_SIZE));
+  }
+
+  const total    = updates.length;
+  const numBatch = chunks.length;
+  toast('Syncing ' + total + ' row(s) in ' + numBatch + ' batch' + (numBatch > 1 ? 'es' : '') + '…', '');
+
+  let completed = 0;
+  let failed    = 0;
+
+  function sendChunk(idx) {
+    if (idx >= chunks.length) {
+      // All batches done — report result
+      if (failed === 0) {
+        toast('✔ ' + (successMsg || 'Updated') + ' — All ' + completed + ' row(s) synced!', 'ok');
+      } else if (completed > 0) {
+        toast('⚠ Partial sync: ' + completed + ' OK, ' + failed + ' failed. Check Console (F12).', 'err');
+      } else {
+        toast('✖ Sync failed for all rows. Check Console (F12).', 'err');
+      }
       if (onDone) onDone();
-    }).catch(e => {
-      toast('Sync failed: ' + e.message, 'err');
-      if (onDone) onDone();
-    });
+      return;
+    }
+
+    const chunk    = chunks[idx];
+    const fetchUrl = url + '?action=markPaid&updates=' + encodeURIComponent(JSON.stringify(chunk));
+
+    // Show progress for multi-batch jobs
+    if (numBatch > 1) {
+      toast('Batch ' + (idx + 1) + ' / ' + numBatch + '…', '');
+    }
+
+    fetch(fetchUrl)
+      .then(res => {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(data => {
+        if (data && data.ok) {
+          completed += chunk.length;
+        } else {
+          failed += chunk.length;
+          console.error('OMIOR batch ' + (idx + 1) + ' error:', data && data.error);
+        }
+        sendChunk(idx + 1);
+      })
+      .catch(e => {
+        failed += chunk.length;
+        console.error('OMIOR batch ' + (idx + 1) + ' fetch error:', e.message);
+        sendChunk(idx + 1);   // keep going with remaining batches
+      });
+  }
+
+  sendChunk(0);
 }
 function nsVal(id) { return (document.getElementById(id).value || '').trim(); }
 function nsSet(msg, color) {
