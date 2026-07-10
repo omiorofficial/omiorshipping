@@ -82,6 +82,11 @@ body{font-family:var(--cal);font-weight:600;background:var(--off);color:var(--bl
 .cust-pend-filter-bar select{padding:7px 10px;border:1px solid var(--border);border-radius:3px;font-family:var(--cal);font-size:11px;background:var(--off);outline:none;cursor:pointer;}
 .overdue-row td{background:#fff8f8;}
 .amount-col{font-weight:900;}
+.order-nums{font-size:10px;color:var(--mid);white-space:nowrap;overflow:hidden;max-width:110px;display:flex;align-items:center;gap:3px;cursor:pointer;}
+.order-nums .onum-chip{display:inline-block;background:#f0f0f0;border-radius:10px;padding:1px 6px;font-weight:700;color:#555;flex-shrink:0;}
+.order-nums .onum-more{display:inline-block;background:#e0e7ff;color:#4338ca;border-radius:10px;padding:1px 6px;font-weight:900;flex-shrink:0;}
+.btn-view-bill{display:inline-flex;align-items:center;gap:3px;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;border-radius:20px;padding:3px 9px;font-size:10px;font-weight:700;font-family:var(--cal);cursor:pointer;white-space:nowrap;}
+.btn-view-bill:hover{background:#e0e7ff;}
 
 /* PENDING DISPATCH TAB */
 .dispatch-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;}
@@ -645,11 +650,11 @@ max-width:260px;
             <tr>
               <th></th><th>AWB</th><th>Customer</th><th>City / State</th>
               <th>Service Type</th><th>Company</th><th>Weight</th>
-              <th>Bill Amt</th><th>Payment</th><th>Actions</th>
+              <th>Bill Amt</th><th>Payment</th><th style="width:120px;">Order #</th><th>Bill</th><th>Actions</th>
             </tr>
           </thead>
           <tbody id="tBody">
-            <tr><td colspan="10"><div class="empty-state">
+            <tr><td colspan="12"><div class="empty-state">
               <div class="empty-icon">&#x1F4E6;</div>No data yet.</div></td></tr>
           </tbody>
         </table>
@@ -721,11 +726,13 @@ max-width:260px;
               <th>Outstanding</th>
               <th>Courier Payable</th>
               <th>Status</th>
+              <th style="width:120px;">Order #</th>
+              <th>Bill</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody id="cpBody">
-            <tr><td colspan="11"><div class="empty-state"><div class="empty-icon">&#x1F4B3;</div>Load data to see customer payment pending</div></td></tr>
+            <tr><td colspan="13"><div class="empty-state"><div class="empty-icon">&#x1F4B3;</div>Load data to see customer payment pending</div></td></tr>
           </tbody>
         </table>
       </div>
@@ -793,11 +800,13 @@ max-width:260px;
               <th>Company</th>
               <th>Bill Amt</th>
               <th>Payment</th>
+              <th style="width:120px;">Order #</th>
+              <th>Bill</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody id="dpBody">
-            <tr><td colspan="13"><div class="empty-state"><div class="empty-icon">&#x2705;</div>All shipments have AWB numbers — nothing pending dispatch! Or load data first.</div></td></tr>
+            <tr><td colspan="15"><div class="empty-state"><div class="empty-icon">&#x2705;</div>All shipments have AWB numbers — nothing pending dispatch! Or load data first.</div></td></tr>
           </tbody>
         </table>
       </div>
@@ -863,11 +872,13 @@ max-width:260px;
               <th>Bill Amt</th>
               <th>Cust. Rcvd</th>
               <th>&#x20B9; Due to Courier</th>
+              <th style="width:120px;">Order #</th>
+              <th>Bill</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody id="hoBody">
-            <tr><td colspan="12"><div class="empty-state"><div class="empty-icon">&#x1F4CB;</div>Load data to see pending handovers</div></td></tr>
+            <tr><td colspan="14"><div class="empty-state"><div class="empty-icon">&#x1F4CB;</div>Load data to see pending handovers</div></td></tr>
           </tbody>
         </table>
       </div>
@@ -1300,6 +1311,23 @@ function respond(obj) {
   </div>
 </div>
 
+<!-- BILL PICTURE PREVIEW MODAL -->
+<div class="overlay" id="billPicModal">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-head">
+      <span class="modal-title">&#x1F4CE; Bill Attachment</span>
+      <button class="modal-x" onclick="closeBillPicModal()">&#xD7;</button>
+    </div>
+    <div class="modal-body" style="padding:0;display:flex;align-items:center;justify-content:center;background:#f5f5f5;min-height:320px;">
+      <iframe id="billPicFrame" src="" style="width:100%;height:420px;border:none;background:#fff;" allow="fullscreen"></iframe>
+    </div>
+    <div class="modal-foot" style="justify-content:space-between;">
+      <a id="billPicOpenLink" href="#" target="_blank" rel="noopener" style="font-size:11px;color:var(--gray);text-decoration:underline;">Open original in Drive</a>
+      <button class="btn btn-outline" onclick="closeBillPicModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- EDIT AWB + COURIER MODAL -->
 <div class="overlay" id="editAwbModal">
   <div class="modal" style="max-width:420px;">
@@ -1486,6 +1514,9 @@ const COL = {
   'courier name':'company','shipping company name':'company','courier company name':'company','shipping company':'company','company name':'company','company':'company','courier company':'company',
   // ── Dates ──
   'promised dispatch date':'dispatchDate','dispatch date':'dispatchDate','dispatch by':'dispatchDate','due date':'dispatchDate','ship by':'dispatchDate','ship date':'dispatchDate','expected dispatch':'dispatchDate','expected ship date':'dispatchDate',
+  // ── Order Numbers / Bill Picture (read-only) ──
+  'order numbers':'orderNumbers','order numbers ( seperated by space )':'orderNumbers','order numbers (separated by space)':'orderNumbers','order number':'orderNumbers',
+  'picture of your bill':'billPic','picture of bill':'billPic','bill picture':'billPic','bill photo':'billPic',
   // ── Status / Row ──
   'status 1':'status1','status1':'status1','STATUS1':'status1','wa status':'status1','whatsapp status':'status1','trigger':'status1',
   'row number':'rowNum','row no':'rowNum','rownum':'rowNum','row #':'rowNum','sr no':'rowNum','sr. no':'rowNum','serial number':'rowNum',
@@ -1555,18 +1586,15 @@ async function triggerSync() {
     document.getElementById('setupBanner').style.display = 'none';
     startCountdown();
   } catch(e) {
-  setSyncStatus('error', 'Sync failed');
-  let hint;
-  if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
-    hint = 'Network error — likely causes: (1) Apps Script not deployed with Access="Anyone", (2) URL is wrong/old, (3) no internet connection. Re-deploy as New Version and copy the fresh /exec URL.';
-  } else if (e.message.includes('JSON') || e.message.includes('format')) {
-    hint = 'Re-deploy the Apps Script (new version) and try again';
-  } else {
-    hint = e.message;
+    setSyncStatus('error', 'Sync failed');
+    const hint = e.message.includes('JSON') || e.message.includes('format')
+      ? 'Re-deploy the Apps Script (new version) and try again'
+      : e.message.includes('Failed to fetch') || e.message.includes('NetworkError')
+        ? 'Network error — check your internet connection'
+        : e.message;
+    toast('Sync failed: ' + hint, 'err');
+    console.error('OMIOR sync error:', e);
   }
-  toast('Sync failed: ' + hint, 'err');
-  console.error('OMIOR sync error:', e);
-}
 }
 
 function startCountdown() {
@@ -1671,6 +1699,8 @@ const bill = billFixed > 0 ? billFixed : Math.round(wRaw * rate * 100) / 100;
         payDue, payRcv, payToCourier, payToCourierSet, paidToCourier,
         invNum: 'INV-' + (invCounter + i),
         dispatchDate:  g(row,'dispatchDate') || '',
+        orderNumbers:  g(row,'orderNumbers'),
+        billPic:       g(row,'billPic'),
       };
     });
 
@@ -1734,7 +1764,7 @@ function sumOf(arr, key) {
 function renderTable() {
   const tb = document.getElementById('tBody');
   if (!filteredData.length) {
-    tb.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">&#x1F4ED;</div>No records found</div></td></tr>';
+    tb.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">&#x1F4ED;</div>No records found</div></td></tr>';
     set('selCount','(0 selected)'); return;
   }
   tb.innerHTML = filteredData.map(r => {
@@ -1756,6 +1786,8 @@ function renderTable() {
       '<td style="font-size:11px;">'+r.weight+' kg</td>' +
       '<td style="font-size:11px;font-weight:700;">\u20B9'+fmt(r.billAmt)+'</td>' +
       '<td>'+payTxt+'</td>' +
+      '<td>'+orderNumsHTML(r)+'</td>' +
+      '<td>'+billLinkHTML(r)+'</td>' +
       '<td><div class="action-cell">' +
         '<button class="btn btn-outline btn-sm" onclick="openAwbEdit('+r.id+')" title="Update AWB &amp; Courier">&#x270F;</button>' +
         '<button class="btn btn-outline btn-sm" onclick="prevLabel('+r.id+')" title="Label">&#x1F3F7;</button>' +
@@ -2471,11 +2503,11 @@ function renderCustPending() {
   if (!tb) return;
 
   if (!allData.length) {
-    tb.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">&#x1F4B3;</div>Load data to see customer payment pending</div></td></tr>';
+    tb.innerHTML = '<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">&#x1F4B3;</div>Load data to see customer payment pending</div></td></tr>';
     return;
   }
   if (!rows.length) {
-    tb.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">&#x2705;</div>' +
+    tb.innerHTML = '<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">&#x2705;</div>' +
       (allData.length ? 'No pending payments — all customers are paid up!' : 'No matching records') +
       '</div></td></tr>';
     return;
@@ -2524,6 +2556,8 @@ function renderCustPending() {
         '</div>' +
       '</td>' +
       '<td id="cust-badge-'+r.id+'">'+badge+'</td>' +
+      '<td>'+orderNumsHTML(r)+'</td>' +
+      '<td>'+billLinkHTML(r)+'</td>' +
       '<td><div class="action-cell" style="gap:4px;">' +
         '<button class="btn btn-gold btn-sm" onclick="openAwbEdit('+r.id+')" title="Edit AWB &amp; Courier">&#x270F; AWB</button>' +
         '<button class="btn btn-outline btn-sm" onclick="prevLabel('+r.id+')" title="Print Label">&#x1F5A8;</button>' +
@@ -2701,6 +2735,48 @@ function sendReminders() {
 }
 
 // ═══════════════════ WHATSAPP HELPER ═══════════════════
+// ═══════════════════ ORDER # / BILL PIC HELPERS (read-only) ═══════════════════
+function orderNumsHTML(r) {
+  const raw = (r.orderNumbers || '').trim();
+  if (!raw) return '<span style="color:#ccc;font-size:10px;">—</span>';
+  const nums = raw.split(/\s+/).filter(Boolean);
+  const MAX_SHOW = 2;
+  const shown = nums.slice(0, MAX_SHOW);
+  const extra = nums.length - shown.length;
+  const chips = shown.map(n => '<span class="onum-chip">'+esc(n)+'</span>').join('');
+  const moreChip = extra > 0 ? '<span class="onum-more">+'+extra+'</span>' : '';
+  const fullList = esc(nums.join(', '));
+  const clickable = extra > 0 ? ' onclick="showOrderNumbers(\''+fullList.replace(/'/g,"\\'")+'\')"' : '';
+  return '<div class="order-nums" title="'+fullList+'"'+clickable+'>' + chips + moreChip + '</div>';
+}
+function showOrderNumbers(list) {
+  alert('Order Numbers:\n\n' + list.split(', ').join('\n'));
+}
+function extractDriveFileId(url) {
+  if (!url) return '';
+  let m = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  return '';
+}
+function billLinkHTML(r) {
+  const url = (r.billPic || '').trim();
+  if (!url) return '<span style="color:#ccc;font-size:10px;">—</span>';
+  return '<button type="button" class="btn-view-bill" onclick="openBillPicModal(\''+esc(url).replace(/'/g,"\\'")+'\')" title="View bill attachment">&#x1F4CE; View Bill</button>';
+}
+function openBillPicModal(url) {
+  const fileId = extractDriveFileId(url);
+  const previewSrc = fileId ? ('https://drive.google.com/file/d/'+fileId+'/preview') : url;
+  document.getElementById('billPicFrame').src = previewSrc;
+  document.getElementById('billPicOpenLink').href = url;
+  openModal('billPicModal');
+}
+function closeBillPicModal() {
+  closeModal('billPicModal');
+  document.getElementById('billPicFrame').src = '';
+}
+
 function maskAwb(awb) {
   if (!awb || awb.length <= 4) return awb ? '****' : '';
   return '*'.repeat(awb.length - 4) + awb.slice(-4);
@@ -2832,11 +2908,11 @@ function renderDispatch() {
   if (!tb) return;
 
   if (!allData.length) {
-    tb.innerHTML = '<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">&#x1F4E6;</div>Load data to see pending dispatches.</div></td></tr>';
+    tb.innerHTML = '<tr><td colspan="15"><div class="empty-state"><div class="empty-icon">&#x1F4E6;</div>Load data to see pending dispatches.</div></td></tr>';
     return;
   }
   if (!filtered.length) {
-    tb.innerHTML = '<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">&#x2705;</div>No records match this filter.</div></td></tr>';
+    tb.innerHTML = '<tr><td colspan="15"><div class="empty-state"><div class="empty-icon">&#x2705;</div>No records match this filter.</div></td></tr>';
     return;
   }
 
@@ -2873,6 +2949,8 @@ function renderDispatch() {
       '<td style="font-size:11px;">'+esc(r.company||'—')+'</td>' +
       '<td class="amount-col">\u20B9'+fmt(r.billAmt)+'</td>' +
       '<td>'+payTxt+'</td>' +
+      '<td>'+orderNumsHTML(r)+'</td>' +
+      '<td>'+billLinkHTML(r)+'</td>' +
       '<td><div class="action-cell" style="gap:4px;">' +
         '<button class="btn btn-gold btn-sm" onclick="openAwbEdit('+r.id+')" title="Update AWB &amp; Courier">&#x270F; AWB</button>' +
         '<button class="btn btn-outline btn-sm" onclick="prevLabel('+r.id+')" title="Print Label">&#x1F5A8;</button>' +
@@ -3322,11 +3400,11 @@ function renderHandover() {
   if (!tb) return;
 
   if (!allData.length) {
-    tb.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">&#x1F4CB;</div>Load data first.</div></td></tr>';
+    tb.innerHTML = '<tr><td colspan="14"><div class="empty-state"><div class="empty-icon">&#x1F4CB;</div>Load data first.</div></td></tr>';
     return;
   }
   if (!rows.length) {
-    tb.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">&#x2705;</div>' +
+    tb.innerHTML = '<tr><td colspan="14"><div class="empty-state"><div class="empty-icon">&#x2705;</div>' +
       (allData.length ? 'No pending handovers — all courier amounts are filled in!' : 'No matching records') +
       '</div></td></tr>';
     return;
@@ -3363,6 +3441,8 @@ function renderHandover() {
             'onclick="saveHandoverAmount('+r.id+')" title="Save & sync to sheet">Save</button>' +
         '</div>' +
       '</td>' +
+      '<td>'+orderNumsHTML(r)+'</td>' +
+      '<td>'+billLinkHTML(r)+'</td>' +
       '<td><div class="action-cell" style="gap:4px;">' +
         '<button class="btn btn-gold btn-sm" onclick="openAwbEdit('+r.id+')" title="Edit AWB &amp; Courier">&#x270F; AWB</button>' +
         '<button class="btn btn-outline btn-sm" onclick="prevLabel('+r.id+')" title="Print Label">&#x1F5A8;</button>' +
@@ -4026,6 +4106,12 @@ function mobCardRow(r, tab) {
       '<div class="mob-row-amt-item"><div class="mob-row-amt-val t-green">\u20B9'+fmt(r.payRcv)+'</div><div class="mob-row-amt-lbl">Received</div></div>' +
       (outstanding > 0 ? '<div class="mob-row-amt-item"><div class="mob-row-amt-val t-red">\u20B9'+fmt(outstanding)+'</div><div class="mob-row-amt-lbl">Due</div></div>' : '') +
     '</div>' +
+    (r.orderNumbers || r.billPic ? (
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap;">' +
+        (r.orderNumbers ? orderNumsHTML(r) : '<span></span>') +
+        (r.billPic ? billLinkHTML(r) : '') +
+      '</div>'
+    ) : '') +
     '<div class="mob-row-actions">'+actionBtns+'</div>' +
     extraBlock +
   '</div>';
